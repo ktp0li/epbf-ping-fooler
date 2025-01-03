@@ -35,8 +35,8 @@ static __always_inline long compute_icmp_checksum(const void* data, __u16 size, 
     __u32 checksum = 0;
     bpf_printk("%d", size);
 
-// FUCK THIS SHIT I HATE IT I SUFFERED SO MUCH WHILE TRYING TO SWITCH BETWEEN UNROLLED LOOP AND UNROLLED LOOP (bpf_for for example).
-// BUT IM GOT VERIFIER'S CORNER CASE [https://stackoverflow.com/questions/70873332/invalid-access-to-packet-even-though-check-made-before-access] 
+// FUCK THIS SHIT I HATE IT I SUFFERED SO MUCH WHILE TRYING TO SWITCH BETWEEN UNROLLED LOOP AND GENERIC LOOP (bpf_for for example).
+// BUT IVE GOT VERIFIER'S CORNER CASE [https://stackoverflow.com/questions/70873332/invalid-access-to-packet-even-though-check-made-before-access] 
     #pragma unroll
     for (__u32 i = 0; i < MAX_CSUM_WORDS; i++) {
         bpf_printk("%d", i);
