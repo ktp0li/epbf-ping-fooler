@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"net"
 	ebpfbinds "ping_fooler/ebpf-binds"
 	"time"
@@ -15,7 +14,7 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go  -go-package ebpfbinds -output-dir=./ebpf-binds PingFooler ping_fooler.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -go-package ebpfbinds -output-dir=./ebpf-binds PingFooler ping_fooler.c
 
 var ifaceDefaultName = "wlan0"
 var ifaceName string
@@ -28,7 +27,7 @@ func main() {
 	}
 
 	var pingFoolObj ebpfbinds.PingFoolerObjects
-	err := ebpfbinds.LoadPingFoolerObjects(&pingFoolObj, &ebpf.CollectionOptions{Programs: ebpf.ProgramOptions{LogSizeStart: math.MaxInt32}})
+	err := ebpfbinds.LoadPingFoolerObjects(&pingFoolObj, &ebpf.CollectionOptions{Programs: ebpf.ProgramOptions{LogSizeStart: 8388608}})
 	if err != nil {
 		var verr *ebpf.VerifierError
 		// look up for full verifier's trace
