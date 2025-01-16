@@ -3,9 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <linux/ip.h>
 #include <linux/if_ether.h>
-#include <linux/in.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <netinet/in.h>
+#include <time.h>
 
 volatile int pkt_count;
 const int ICMP_TYPE_REPLY = 0;
@@ -26,42 +27,6 @@ struct {
     __type(value, int);
     __uint(max_entries, 1);
 } pkt_len SEC(".maps");
-
-#define MAX_CSUM_WORDS 750
-
-// thanks Z17 from stackoverflow [https://stackoverflow.com/questions/20428578/calculating-icmp-packet-checksum] for func header
-static __always_inline long compute_icmp_checksum(const void* data, __u16 size, const void* data_end) {
-    const __u16* data_u16 = (const __u16 *)data;
-    __u32 checksum = 0;
-    bpf_printk("%d", size);
-
-// FUCK THIS SHIT I HATE IT I SUFFERED SO MUCH WHILE TRYING TO SWITCH BETWEEN UNROLLED LOOP AND GENERIC LOOP (bpf_for for example).
-// BUT IVE GOT VERIFIER'S CORNER CASE [https://stackoverflow.com/questions/70873332/invalid-access-to-packet-even-though-check-made-before-access] 
-    #pragma unroll
-    for (__u32 i = 0; i < MAX_CSUM_WORDS; i++) {
-        bpf_printk("%d", i);
-        if (2*i + 1 >= size) {
-            break;
-        }
-
-        if (data + 2*i + 1 + 1 > data_end) {
-            return 0; /* should be unreachable */
-        }
-
-        bpf_printk("%04x", __builtin_bswap16(data_u16[i]));
-        checksum +=  __builtin_bswap16(data_u16[i]);
- //       if (2*i + 1 == size) {
- //            if (data + (i*2+2) > data_end) {
- //               return 0;
- //           }else{
- //               checksum += ((const __u8*)data)[i*2+1];
- //               return checksum;
- //           }
-        }
-        checksum = (checksum >> 16) + (checksum & 0xffff);
-
-    return __builtin_bswap16((__u16)(~checksum));
-}
 
 SEC("xdp")
 int xdp_pass(struct xdp_md* ctx) {
@@ -94,6 +59,22 @@ int xdp_pass(struct xdp_md* ctx) {
 
     __u32 key = 0;
 
+    struct icmp_packet *icmp_pkt = (struct icmp_packet *)(ip + 1);
+    if ((void *)(icmp_pkt + 1) > data_end) {
+        return XDP_PASS;
+    }
+
+    // check if icmp packet is reply to echo
+    if (icmp_pkt->type != ICMP_TYPE_REPLY) {
+        return XDP_PASS;
+    }
+
+    void* icmp_pkt_data = (void *)(icmp_pkt + 1);
+    // does icmp data have 16 bytes of timestamp
+    if ((void *)(icmp_pkt_data + sizeof(__u64)) > data_end) {
+        return XDP_PASS;
+    }
+
     // send packet size to userspace
     bpf_printk("pkt len: %d", packet_len);
     bpf_map_update_elem(&pkt_len, &key, &packet_len, BPF_ANY);
@@ -101,35 +82,22 @@ int xdp_pass(struct xdp_md* ctx) {
     // increment packet count
     __sync_fetch_and_add(&pkt_count, 1); 
 
-    struct icmp_packet *icmp_pkt = (struct icmp_packet *)(ip + 1);
-    if ((void *)(icmp_pkt + 1) > data_end) {
-        return XDP_PASS;
-    }
-
-    // check if icmp packet is reply to echo
-    if (icmp_pkt->code != ICMP_TYPE_REPLY) {
-        return XDP_PASS;
-    }
- 
-    void* icmp_pkt_data = (void *)(icmp_pkt + 1);
-    // does icmp data have 16 bytes of timestamp
-    if ((void *)(icmp_pkt_data + 16) > data_end) {
-        return XDP_PASS;
-    }
-
     // replace timestamp in packet with garbage
-    __u32 random_timestamp1 = bpf_get_prandom_u32();
-    __u32 random_timestamp2 = bpf_get_prandom_u32();
+    __u32 old_timestamp = ntohl(((__u32 *)icmp_pkt_data)[0]);
+    __u32 new_timestamp = bpf_get_prandom_u32() % 1730000000;
+    ((__u32 *)icmp_pkt_data)[0] = new_timestamp;
 
-    ((__u32 *)icmp_pkt_data)[0] = random_timestamp1;
-    ((__u32 *)icmp_pkt_data)[1] = random_timestamp2;
+    // recompute checksum
+    __u32 new_checksum = ntohs(icmp_pkt->checksum);
 
-    // flush checksum to recheck it
-    icmp_pkt->checksum = 0;
-    __u16 checksum = compute_icmp_checksum((void *)icmp_pkt, packet_len - 20 - 14, data_end);
-    icmp_pkt->checksum = checksum;
+    for (unsigned int i = 0; i <= 1; i++) {
+        new_checksum += ((__u16 *)&old_timestamp)[i] + (~ntohs(((__u16 *)&new_timestamp)[i]) & 0xffff);
+        new_checksum = (new_checksum & 0xffff) + (new_checksum>>16);
+        icmp_pkt->checksum = htons(new_checksum + (new_checksum>>16));
+    }
 
-    bpf_printk("checksum: %08x", checksum);
+    bpf_printk("%16x", new_checksum);
+
     return XDP_PASS;
 }
 
