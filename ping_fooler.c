@@ -88,15 +88,13 @@ int xdp_pass(struct xdp_md* ctx) {
     ((__u32 *)icmp_pkt_data)[0] = new_timestamp;
 
     // recompute checksum
-    __u32 new_checksum;
-    new_checksum = ((__u16 *)&old_timestamp)[0] + (~ntohs(((__u16 *)&new_timestamp)[0]) & 0xffff);
-    new_checksum += ntohs(icmp_pkt->checksum);
-    new_checksum = (new_checksum & 0xffff) + (new_checksum>>16);
-    icmp_pkt->checksum = htons(new_checksum + (new_checksum>>16));
+    __u32 new_checksum = ntohs(icmp_pkt->checksum);
 
-    new_checksum += ((__u16 *)&old_timestamp)[1] + (~ntohs(((__u16 *)&new_timestamp)[1]) & 0xffff);
-    new_checksum = (new_checksum & 0xffff) + (new_checksum>>16);
-    icmp_pkt->checksum = htons(new_checksum + (new_checksum>>16));
+    for (unsigned int i = 0; i <= 1; i++) {
+        new_checksum += ((__u16 *)&old_timestamp)[i] + (~ntohs(((__u16 *)&new_timestamp)[i]) & 0xffff);
+        new_checksum = (new_checksum & 0xffff) + (new_checksum>>16);
+        icmp_pkt->checksum = htons(new_checksum + (new_checksum>>16));
+    }
 
     bpf_printk("%16x", new_checksum);
 
