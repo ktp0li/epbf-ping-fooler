@@ -17,6 +17,15 @@ rtt min/avg/max/mdev = 319434152004.869/1162200791204.734/1617171790004.969/2252
 ```
 looks fun, doesn't it? :)
 
+userspace part of program:
+```
+~ ❯ sudo ./ping_fooler
+8.8.8.8 -> 10.0.3.192 ICMP 1 echo reply id=10769 seq=1 ttl=109 time=27-01-2025 20:51:57 modified_time=29-04-2022 10:49:53
+8.8.8.8 -> 10.0.3.192 ICMP 2 echo reply id=10769 seq=2 ttl=109 time=27-01-2025 20:51:58 modified_time=16-05-1977 13:12:32
+8.8.8.8 -> 10.0.3.192 ICMP 3 echo reply id=10769 seq=3 ttl=109 time=27-01-2025 20:51:59 modified_time=25-10-1981 05:25:15
+8.8.8.8 -> 10.0.3.192 ICMP 4 echo reply id=10769 seq=4 ttl=109 time=27-01-2025 20:52:00 modified_time=09-12-1985 15:16:56
+```
+
 ---
 
 ### build:
@@ -36,6 +45,5 @@ go build
 
 ---
 ### TODO:
-- [X] switch from random int to random uint
-- [X] generate uint similar to unix timestamp
-- [ ] improve userspace part of program, add more packet info
+- [X] generate int similar to unix timestamp
+- [X] improve userspace part of program, add more packet info

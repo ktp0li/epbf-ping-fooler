@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <time.h>
+#include <sys/time.h>
 
 volatile int pkt_count;
 const int ICMP_TYPE_REPLY = 0;
@@ -27,6 +28,22 @@ struct {
     __type(value, int);
     __uint(max_entries, 1);
 } pkt_len SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint (max_entries, 256 * 4096);
+} packet_info_buf SEC(".maps");
+
+struct packet_info {
+    __u32 length;
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u16 id; 
+    __u16 seq;
+    __u8 ttl;
+    struct timeval old_timestamp;
+    struct timeval new_timestamp;
+} __attribute__((packed));
 
 SEC("xdp")
 int xdp_pass(struct xdp_md* ctx) {
@@ -71,16 +88,18 @@ int xdp_pass(struct xdp_md* ctx) {
 
     void* icmp_pkt_data = (void *)(icmp_pkt + 1);
     // does icmp data have 16 bytes of timestamp
-    if ((void *)(icmp_pkt_data + sizeof(__u64)) > data_end) {
+    if ((void *)(icmp_pkt_data + sizeof(__u128)) > data_end) {
         return XDP_PASS;
     }
 
-    // send packet size to userspace
-    bpf_printk("pkt len: %d", packet_len);
     bpf_map_update_elem(&pkt_len, &key, &packet_len, BPF_ANY);
 
     // increment packet count
     __sync_fetch_and_add(&pkt_count, 1); 
+
+    // values for sending packet info to userspace
+    int64_t old_timestamp_sec = ((int64_t *)icmp_pkt_data)[0];
+    int64_t old_timestamp_msec = ((int64_t *)icmp_pkt_data)[1];
 
     // replace timestamp in packet with garbage
     __u32 old_timestamp = ntohl(((__u32 *)icmp_pkt_data)[0]);
@@ -96,7 +115,29 @@ int xdp_pass(struct xdp_md* ctx) {
         icmp_pkt->checksum = htons(new_checksum + (new_checksum>>16));
     }
 
-    bpf_printk("%16x", new_checksum);
+    // send packet info to userspace
+    struct packet_info *cur_pkt_info = bpf_ringbuf_reserve(&packet_info_buf, sizeof(struct packet_info), 0);
+    if (!cur_pkt_info) {
+        return XDP_PASS;
+    }
+    cur_pkt_info->dst_ip = ip->daddr;
+    cur_pkt_info->src_ip = ip->saddr;
+
+    cur_pkt_info->id = icmp_pkt->identifier;
+    cur_pkt_info->length = packet_len;
+    cur_pkt_info->seq = icmp_pkt->seq_number;
+    cur_pkt_info->ttl = ip->ttl;
+
+    cur_pkt_info->old_timestamp.tv_sec = old_timestamp_sec;
+    cur_pkt_info->old_timestamp.tv_usec = old_timestamp_msec;
+
+    cur_pkt_info->new_timestamp.tv_sec = ((int64_t *)icmp_pkt_data)[0];
+    cur_pkt_info->new_timestamp.tv_usec = ((int64_t *)icmp_pkt_data)[1];
+
+    bpf_printk("%08x, %08x", ((int64_t *)icmp_pkt_data)[0], ((int64_t *)icmp_pkt_data)[1]);
+    bpf_printk("%lld, %lld", ((int64_t *)icmp_pkt_data)[0], ((int64_t *)icmp_pkt_data)[1]);
+
+    bpf_ringbuf_submit(cur_pkt_info, 0);
 
     return XDP_PASS;
 }
