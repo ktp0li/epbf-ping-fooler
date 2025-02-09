@@ -3,10 +3,7 @@
 #include <bpf/bpf_helpers.h>
 #include <linux/ip.h>
 #include <linux/if_ether.h>
-#include <stddef.h>
-#include <stdlib.h>
 #include <netinet/in.h>
-#include <time.h>
 #include <sys/time.h>
 
 volatile int pkt_count;
@@ -19,15 +16,6 @@ struct icmp_packet {
     __be16 identifier;
     __be16 seq_number;
 } __attribute__((packed));
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY); 
-
-
-    __type(key, __u32);
-    __type(value, int);
-    __uint(max_entries, 1);
-} pkt_len SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -91,8 +79,6 @@ int xdp_pass(struct xdp_md* ctx) {
     if ((void *)(icmp_pkt_data + sizeof(__u128)) > data_end) {
         return XDP_PASS;
     }
-
-    bpf_map_update_elem(&pkt_len, &key, &packet_len, BPF_ANY);
 
     // increment packet count
     __sync_fetch_and_add(&pkt_count, 1); 

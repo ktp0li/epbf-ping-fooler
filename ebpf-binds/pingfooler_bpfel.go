@@ -62,7 +62,6 @@ type PingFoolerProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type PingFoolerMapSpecs struct {
 	PacketInfoBuf *ebpf.MapSpec `ebpf:"packet_info_buf"`
-	PktLen        *ebpf.MapSpec `ebpf:"pkt_len"`
 }
 
 // PingFoolerVariableSpecs contains global variables before they are loaded into the kernel.
@@ -94,13 +93,11 @@ func (o *PingFoolerObjects) Close() error {
 // It can be passed to LoadPingFoolerObjects or ebpf.CollectionSpec.LoadAndAssign.
 type PingFoolerMaps struct {
 	PacketInfoBuf *ebpf.Map `ebpf:"packet_info_buf"`
-	PktLen        *ebpf.Map `ebpf:"pkt_len"`
 }
 
 func (m *PingFoolerMaps) Close() error {
 	return _PingFoolerClose(
 		m.PacketInfoBuf,
-		m.PktLen,
 	)
 }
 
